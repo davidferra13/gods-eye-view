@@ -1,16 +1,18 @@
 import { createView,viewUrl } from '/src/view/index.js';
 import { createWorldTrackerClient } from './world-tracker-client.js';
 import { mountLocalPreferences } from './network-preference-controls.js';
+import { mountPlanetaryEvents } from './network-planetary.js';
 const api=createWorldTrackerClient(),$=id=>document.getElementById(id),frame=$('globe');
-const layers=['flights','vessels','satellites'];
+const layers=['flights','vessels','satellites','earthquakes'];
 frame.src=viewUrl(location.origin+'/?embed=1',createView({camera:{lat:25,lon:-35,altitude_m:18000000},layers,map:'esri-imagery',style:'normal'}));
 let queryAbort,healthBusy=false,searchBusy=false,debounce,selected=null,disposed=false,pins=[];
 let preferenceStorage;try{preferenceStorage=localStorage;}catch{}
 const learning=mountLocalPreferences({document,storage:preferenceStorage,onSuggested:kind=>{
   $('kind').value=kind;learning.capture(kind,'selection');learning.setActive(kind);selected=null;$('selection').hidden=true;
-  frame.src=viewUrl(location.origin+'/?embed=1',createView({camera:{lat:25,lon:-35,altitude_m:18000000},layers:[{aircraft:'flights',vessel:'vessels',satellite:'satellites'}[kind]],map:'esri-imagery',style:'normal'}));
+  frame.src=viewUrl(location.origin+'/?embed=1',createView({camera:{lat:25,lon:-35,altitude_m:18000000},layers:[{aircraft:'flights',vessel:'vessels',satellite:'satellites'}[kind],'earthquakes'],map:'esri-imagery',style:'normal'}));
   void search();
 }});
+const planetary=mountPlanetaryEvents({windowRef:window,document,frame,origin:location.origin,storage:preferenceStorage,makeView:createView,isTracking:()=>Boolean(selected),onNavigate:()=>{selected=null;$('selection').hidden=true;learning.setActive(null);}});
 try{pins=JSON.parse(localStorage.getItem('homeWorldWatchlist')||'[]').filter(p=>typeof p.id==='string').slice(0,25);}catch{}
 const fmt=n=>new Intl.NumberFormat().format(n||0);
 const age=at=>!Number.isFinite(at)?'time unknown':Math.max(0,Math.round((Date.now()-at)/1000))<60?`${Math.max(0,Math.round((Date.now()-at)/1000))}s ago`:`${Math.round((Date.now()-at)/60000)}m ago`;
@@ -53,6 +55,7 @@ async function search(background=false){
 }
 async function health(){
   if(healthBusy||disposed)return;healthBusy=true;
+  planetary.request();
   try{const data=await api.status();$('feeds').replaceChildren();
     for(const [key,f] of Object.entries(data.feeds)){const root=element('div','feed'),line=element('div','feed-line'),name=element('span','feed-name');name.append(element('i','dot '+f.status),document.createTextNode(({aircraft:'Aircraft',localAircraft:'Local receiver',vessels:'Vessels',satellites:'Orbital catalog'})[key]||key));line.append(name,element('span','feed-count',fmt(f.count)));root.append(line,element('small','',`${f.source} · ${f.status}${f.lastSuccessAt?' · checked '+age(f.lastSuccessAt):''}`));if(f.status==='unconfigured')root.append(element('small','','Receiver or feed credential needed'));$('feeds').append(root);}
     $('updated').textContent=new Date(data.generatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -62,5 +65,5 @@ async function health(){
 }
 $('search-form').onsubmit=e=>{e.preventDefault();clearTimeout(debounce);void search();};$('kind').onchange=()=>{learning.capture($('kind').value,'selection');void search();};$('query').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(search,350);};
 renderPins();void health();const healthTimer=setInterval(health,15000);const clockTimer=setInterval(()=>{$('clock').textContent=new Date().toISOString().slice(11,19)+' UTC';},1000);
-window.addEventListener('pagehide',event=>{clearTimeout(debounce);queryAbort?.abort();if(event.persisted)return;disposed=true;learning.dispose();clearInterval(healthTimer);clearInterval(clockTimer);});
-window.addEventListener('pageshow',event=>{if(event.persisted&&!disposed){learning.resume();void health();}});
+window.addEventListener('pagehide',event=>{clearTimeout(debounce);queryAbort?.abort();if(event.persisted)return;disposed=true;learning.dispose();planetary.dispose();clearInterval(healthTimer);clearInterval(clockTimer);});
+window.addEventListener('pageshow',event=>{if(event.persisted&&!disposed){learning.resume();planetary.resume();void health();}});

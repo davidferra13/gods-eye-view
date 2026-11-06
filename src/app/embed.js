@@ -12,6 +12,7 @@
  */
 
 import * as Cesium from 'cesium';
+import { installPlanetaryBridge } from './planetaryBridge.js';
 import { announceNavigationAuthority } from '../navigationPolicy.js';
 import { annotationsFromParams, createView } from '../view/index.js';
 
@@ -173,11 +174,12 @@ function flyTo(viewer, camera) {
  */
 export async function applyView(
   view,
-  { viewer, dataManager, run, signal, retryMs = FOLLOW_RETRY_MS },
+  { viewer, dataManager, run, signal, retryMs = FOLLOW_RETRY_MS, allowCamera = () => true },
 ) {
   const steps = [];
   const act = async (name, args) => {
     let result = null;
+    if (!allowCamera()) { steps.push({step:name,ok:false,error:"Recent manual interaction"}); return {ok:false}; }
     try {
       result = await run(name, args);
     } catch (error) {
@@ -208,7 +210,7 @@ export async function applyView(
   if (view.annotations.length)
     await act('annotate_map', { annotations: [...view.annotations] });
   if (!view.follow) {
-    steps.push({ step: 'camera', ok: await flyTo(viewer, view.camera) });
+    steps.push({ step: 'camera', ok: allowCamera() ? await flyTo(viewer, view.camera) : false });
     return steps;
   }
   // A followed entity owns the camera, and a camera flight would end the
@@ -216,6 +218,7 @@ export async function applyView(
   // appears once its layer has data; retry until then.
   const layerId = FOLLOW_LAYERS[view.follow.kind];
   const follow = async () => {
+    if (!allowCamera()) return false;
     try {
       return (
         (await run('track_entity', { query: view.follow.id, layerId }))?.ok ===
@@ -227,9 +230,9 @@ export async function applyView(
   };
   let followed = await follow();
   if (!followed) {
-    steps.push({ step: 'camera', ok: await flyTo(viewer, view.camera) });
+    steps.push({ step: 'camera', ok: allowCamera() ? await flyTo(viewer, view.camera) : false });
     for (let attempt = 1; attempt < FOLLOW_ATTEMPTS && !followed; attempt++) {
-      if (signal?.aborted) break;
+      if (signal?.aborted || !allowCamera()) break;
       await delay(retryMs, signal);
       followed = await follow();
     }
@@ -271,6 +274,7 @@ export function installViews({
   // A framing page talks to the app across frames; an inline panel shares
   // the page with it and talks through the page's own window.
   const peer = isEmbeddedInline() ? windowRef : windowRef.parent;
+  const planetary = installPlanetaryBridge({windowRef,peer,origin:location.origin||windowRef.location?.origin,viewer,dataManager});
   // Answers go back only to the origin that asked. An inline panel posts to
   // its own window, and a sandboxed framing page has no origin to name.
   const post = (message, origin = '*') => {
@@ -304,13 +308,18 @@ export function installViews({
     }
     queue = queue.then(async () => {
       if (signal?.aborted) return;
-      const steps = await applyView(view, { viewer, dataManager, run, signal });
+      const automatic=event.data.automatic===true;
+      const sameOrigin=event.origin===(location.origin||windowRef.location?.origin);
+      if (automatic && (!sameOrigin || !planetary.canAutoFocus())) { post({type:EMBED_APPLIED_MESSAGE,id,ok:false,authorityDenied:true,error:'Automatic camera authority unavailable'},replyOrigin); return; }
+      const previousView=event.data.planetary===true&&sameOrigin?planetary.capture():null;
+      const steps = await applyView(view, { viewer, dataManager, run, signal, allowCamera:automatic?planetary.canAutoFocus:()=>true });
       post(
         {
           type: EMBED_APPLIED_MESSAGE,
           id,
           ok: steps.every((step) => step.ok),
           steps,
+          ...(previousView?{previousView,authorityDenied:automatic&&!planetary.canAutoFocus()}:{}),
         },
         replyOrigin,
       );
@@ -322,6 +331,7 @@ export function installViews({
   });
   return () => {
     stopRendering();
+    planetary.dispose();
     windowRef.removeEventListener('message', onMessage);
   };
 }

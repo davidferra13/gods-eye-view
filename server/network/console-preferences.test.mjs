@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {mountLocalPreferences} from '../../public/network-preference-controls.js';
+import {mountPlanetaryEvents} from '../../public/network-planetary.js';
 const source=fs.readFileSync(new URL('../../public/network-console.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 function fixture(){
   const elements=new Map(),storage=new Map(),intervals=new Map();let time=Date.now(),sequence=0;
@@ -12,7 +13,7 @@ function fixture(){
   const localStorage={getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)};
   const api={status:async()=>({feeds:{},generatedAt:time}),search:async()=>({items:[],total:0})};
   const window=new EventTarget();
-  const context=vm.createContext({document,window,location:{origin:'http://fixture'},localStorage,innerWidth:1200,AbortController,Intl,Date,console,createView:v=>v,viewUrl:(base,v)=>JSON.stringify(v),createWorldTrackerClient:()=>api,mountLocalPreferences:opts=>mountLocalPreferences({...opts,now:()=>time}),setInterval:fn=>{intervals.set(++sequence,fn);return sequence;},clearInterval:id=>intervals.delete(id),setTimeout:()=>++sequence,clearTimeout(){}});
+  const context=vm.createContext({document,window,location:{origin:'http://fixture'},localStorage,innerWidth:1200,AbortController,Intl,Date,console,createView:v=>v,viewUrl:(base,v)=>JSON.stringify(v),createWorldTrackerClient:()=>api,mountPlanetaryEvents,mountLocalPreferences:opts=>mountLocalPreferences({...opts,now:()=>time}),setInterval:fn=>{intervals.set(++sequence,fn);return sequence;},clearInterval:id=>intervals.delete(id),setTimeout:()=>++sequence,clearTimeout(){}});
   vm.runInContext(source,context);
   return {context,document,window,api,intervals,el:id=>document.getElementById(id),advance:n=>{time+=n;},data:()=>JSON.parse(storage.get('homeWorldPreferences.v1'))};
 }
