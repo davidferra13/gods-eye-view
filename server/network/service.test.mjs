@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTracker } from './service.js';
+import { mkdtemp,rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 const initial=Date.UTC(2026,10,6,12);
 test('one polling owner coalesces clients, retains last good records and ages them on failure',async()=>{
   let now=initial,calls=0,fail=false;
@@ -46,4 +49,13 @@ test('an unavailable bulk orbital catalog falls back to stations and reports par
   const fetchImpl=async url=>new URL(url).searchParams.get('GROUP')==='stations'?new Response(tle):new Response('',{status:503});
   const s=createTracker({baseUrl:'http://127.0.0.1:9999',fetchImpl,now:()=>initial});await s.refresh();
   assert.equal(s.status().feeds.satellites.status,'partial-catalog');assert.equal(s.query({q:'ISS',kind:'satellite'}).total,1);s.dispose();
+});
+test('a restarted collector restores source times and orbital catalog while upstream is unavailable',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'gev-network-cache-'));
+  const tle='ISS (ZARYA)\n1 25544U 98067A   26309.85320381  .00006629  00000+0  12749-3 0  9998\n2 25544  51.6327 319.0560 0007195 352.5747   7.5134 15.49194530593711\n';
+  const fetchImpl=async url=>new URL(url).pathname==='/api/flights'?Response.json({states:[['abc123','TEST','US',initial/1000,initial/1000,-71,42,1000,false,100,90]]}):new URL(url).pathname==='/api/celestrak/active'?new Response(tle):new Response('',{status:503});
+  try{const first=createTracker({baseUrl:'http://127.0.0.1:9999',fetchImpl,now:()=>initial,cacheDirectory:dir});await first.refresh();first.dispose();
+    const next=createTracker({baseUrl:'http://127.0.0.1:9999',fetchImpl:async()=>{throw new Error('offline')},now:()=>initial+60000,cacheDirectory:dir});await next.refresh();
+    assert.equal(next.query({kind:'aircraft'}).items[0].observedAt,initial);assert.equal(next.query({q:'ISS',kind:'satellite'}).total,1);next.dispose();
+  }finally{await rm(dir,{recursive:true,force:true});}
 });

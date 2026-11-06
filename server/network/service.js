@@ -1,5 +1,5 @@
 import { readResponseTextCapped } from '../providers/common/http.js';
-import { mkdir,writeFile,rename } from 'node:fs/promises';
+import { mkdir,writeFile,rename,readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { normalizeAircraft, normalizeLocalAircraft, normalizeVessels, parseCatalog, satelliteTracks, mergeTracks, selectTracks, freshness, parseLocalAisUrl } from './tracks.js';
 
@@ -14,24 +14,42 @@ export function createTracker({baseUrl, fetchImpl = fetch, now = Date.now, aisUr
     satellites: {interval:6*3600000, url:'/api/celestrak/active', source:'CelesTrak', rows:[]},
   };
   let catalog=[], predicted=[], predictedAt=0, disposed=false;
+  async function persist(name,value){
+    if(!cacheDirectory)return;
+    try{await mkdir(cacheDirectory,{recursive:true});const target=path.join(cacheDirectory,name),tmp=target+'.'+process.pid+'.tmp';await writeFile(tmp,JSON.stringify(value));await rename(tmp,target);}catch{/* source timestamps and current memory remain authoritative */}
+  }
+  async function restore(){
+    if(!cacheDirectory)return;
+    try{const e=JSON.parse(await readFile(path.join(cacheDirectory,'network-aircraft.json'),'utf8'));
+      if(e.schemaVersion===1&&Number.isFinite(e.at)&&e.at<=now()+30000&&Array.isArray(e.rows)){
+        const f=feeds.aircraft;f.rows=e.rows.slice(0,50000).filter(r=>r.kind==='aircraft'&&typeof r.id==='string'&&Number.isFinite(r.lat)&&Number.isFinite(r.lon)&&Number.isFinite(r.observedAt)&&now()-r.observedAt<1800000);
+        f.source=typeof e.source==='string'?e.source:f.source;f.status='stale';f.lastSuccessAt=e.at;f.nextAttemptAt=e.at+f.interval;
+      }
+    }catch{}
+    let best=null;
+    for(const group of ['active','stations']){try{const e=JSON.parse(await readFile(path.join(cacheDirectory,`celestrak-${group}.json`),'utf8'));const parsed=parseCatalog(e.body);
+      if(parsed.length&&Number.isFinite(e.at)&&e.at<=now()+30000&&(!best||e.at>best.at))best={...e,parsed,group};
+    }catch{}}
+    if(best){catalog=best.parsed;const f=feeds.satellites;f.partialCatalog=best.group!=='active';f.status=f.partialCatalog?'partial-catalog':'predicted';f.source=`CelesTrak · ${best.group==='active'?'active catalog':'stations fallback'}`;f.lastSuccessAt=best.at;f.nextAttemptAt=best.at+f.interval;}
+  }
+  const restored=restore();
   async function refreshFeed(key, force) {
     const f=feeds[key], t=now();
     if(disposed || f.disabled || f.pending || !force&&t<(f.nextAttemptAt||0)) return f.pending;
     f.lastAttemptAt=t;
     f.pending=(async()=>{
       try {
-        const signal=AbortSignal.timeout(25000);
-        let r=await fetchImpl(new URL(f.url,baseUrl),{signal,redirect:'error',headers:{Accept:key==='satellites'?'text/plain':'application/json'}});
-        let body=await readResponseTextCapped(r,16*1024*1024,signal);
+        // OpenSky's existing governor may perform a bounded retry; let it finish.
+        const signal=AbortSignal.timeout(key==='aircraft'?65000:25000);
+        let r,body;
+        try{r=await fetchImpl(new URL(f.url,baseUrl),{signal,redirect:'error',headers:{Accept:key==='satellites'?'text/plain':'application/json'}});body=await readResponseTextCapped(r,16*1024*1024,signal);}
+        catch(error){if(key!=='satellites')throw error;r={ok:false,status:502};body='';}
         f.partialCatalog=false;
         if(key==='satellites'&&!r.ok){
           // A bulk-group denial must not erase the separately available stations feed.
           const fallbackSignal=AbortSignal.timeout(15000);
           r=await fetchImpl(new URL('https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle'),{signal:fallbackSignal,redirect:'error',headers:{Accept:'text/plain','User-Agent':'Home-World-Tracker/1.0'}});
           body=await readResponseTextCapped(r,16*1024*1024,fallbackSignal);f.partialCatalog=true;
-          if(r.ok&&parseCatalog(body).length&&cacheDirectory){
-            try{await mkdir(cacheDirectory,{recursive:true});const target=path.join(cacheDirectory,'celestrak-stations.json'),tmp=target+'.network-tmp';await writeFile(tmp,JSON.stringify({at:now(),body}));await rename(tmp,target);}catch{/* prediction still works if durable cache is unavailable */}
-          }
         }
         let data;
         if(key!=='satellites') { try{data=JSON.parse(body);}catch{throw new Error('invalid payload');} }
@@ -39,11 +57,13 @@ export function createTracker({baseUrl, fetchImpl = fetch, now = Date.now, aisUr
         if(key==='satellites') {
           const next=parseCatalog(body);if(!next.length)throw new Error('empty orbital catalog');catalog=next;predictedAt=0;
           f.status=f.partialCatalog?'partial-catalog':'predicted';f.count=catalog.length;f.source=f.partialCatalog?'CelesTrak · stations fallback':'CelesTrak · active catalog';
+          await persist(`celestrak-${f.partialCatalog?'stations':'active'}.json`,{at:t,body});
         } else if(key==='aircraft') {
           if(!Array.isArray(data.states))throw new Error('invalid aircraft payload');
           f.source=r.headers.get('X-Feed-Source')||f.source;
           f.rows=normalizeAircraft(data,f.source,t);
           f.status=r.headers.get('X-OpenSky-Stale')?'stale':f.rows.some(x=>x.freshness==='live')?'live':'stale';
+          await persist('network-aircraft.json',{schemaVersion:1,at:t,source:f.source,rows:f.rows});
         } else if(key==='localAircraft') {
           f.rows=normalizeLocalAircraft(data,t);f.status=data.configured?(f.rows.length?'live':data.feeds?.some(x=>x.status==='unreachable')?'unavailable':'waiting'):'unconfigured';
         } else {
@@ -63,7 +83,7 @@ export function createTracker({baseUrl, fetchImpl = fetch, now = Date.now, aisUr
     })();
     return f.pending;
   }
-  async function refresh(force=false) { await Promise.all(Object.keys(feeds).map(key=>refreshFeed(key,force))); }
+  async function refresh(force=false) { await restored;await Promise.all(Object.keys(feeds).map(key=>refreshFeed(key,force))); }
   function retained(rows) {return rows.filter(r=>now()-(r.observedAt??r.receivedAt)<1800000).map(r=>({...r,freshness:freshness(r.observedAt,now())}));}
   function dataStatus(f) {
     if(['unconfigured','invalid','unavailable'].includes(f.status))return f.status;
