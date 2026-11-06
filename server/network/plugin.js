@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat,readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createTracker } from './service.js';
 import { toReadsb } from './tracks.js';
@@ -46,6 +46,12 @@ export function networkTrackerPlugin() {
         if(!file.startsWith(path.resolve(root)+path.sep)||relative.includes('\\')){send(res,403,{error:'invalid path'});return;}
         try {const info=await stat(file);if(!info.isFile()||info.size>16*1024*1024)throw new Error();}
         catch{send(res,404,{error:'asset not found'});return;}
+        if(relative==='config.js'){
+          // Public snapshots arrive slower than a physical 1 Hz receiver. Keep
+          // original seen ages, but allow a bounded window so the viewer stays useful.
+          res.writeHead(200,{'Content-Type':'text/javascript','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});
+          res.end(await readFile(file,'utf8')+'\nPageName = "HOME AIR / reported positions";\nseenTimeout = 600;\nseenTimeoutMlat = 600;\n');return;
+        }
         res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});
         const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);
       }catch(error){send(res,error instanceof TypeError?400:502,{error:error instanceof TypeError?error.message:'Tracker request failed'});}
