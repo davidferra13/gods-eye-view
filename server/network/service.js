@@ -61,6 +61,10 @@ export function createTracker({baseUrl, fetchImpl = fetch, now = Date.now, aisUr
         } else if(key==='aircraft') {
           if(!Array.isArray(data.states))throw new Error('invalid aircraft payload');
           f.source=r.headers.get('X-Feed-Source')||f.source;
+          f.snapshotAt=Number.isFinite(data.time)&&data.time>=0&&data.time*1000<=t+30000?data.time*1000:null;
+          const rawAge=r.headers.get('X-OpenSky-Stale-Seconds'),age=rawAge===null?NaN:Number(rawAge);
+          f.upstreamStaleSeconds=Number.isFinite(age)&&age>=0?Math.min(age,31536000):null;
+          f.sourceProblem=r.headers.get('X-OpenSky-Cache')==='STALE'||(f.snapshotAt!==null&&t-f.snapshotAt>180000)?'Upstream aircraft snapshot stale; original position times retained':null;
           f.rows=normalizeAircraft(data,f.source,t);
           f.status=r.headers.get('X-OpenSky-Stale')?'stale':f.rows.some(x=>x.freshness==='live')?'live':'stale';
           await persist('network-aircraft.json',{schemaVersion:1,at:t,source:f.source,rows:f.rows});
@@ -96,6 +100,7 @@ export function createTracker({baseUrl, fetchImpl = fetch, now = Date.now, aisUr
     return {schemaVersion:1,service:'home-world-tracker',generatedAt:t,coverage:'Available public and configured receiver feeds; not universal tracking',prediction:'Satellites are SGP4 predictions, not live telemetry',feeds:Object.fromEntries(Object.entries(feeds).map(([key,f])=>[key,{
       source:f.source,status:key==='satellites'?(f.status||'starting'):dataStatus(f),count:key==='satellites'?catalog.length:retained(f.rows).length,
       lastAttemptAt:f.lastAttemptAt||null,lastSuccessAt:f.lastSuccessAt||null,nextAttemptAt:f.nextAttemptAt||null,error:f.error||null,
+      ...(key==='aircraft'?{snapshotAt:f.snapshotAt??null,upstreamStaleSeconds:f.upstreamStaleSeconds??null,sourceProblem:f.sourceProblem??null}:{}),
       intervalMs:f.interval,coverage:key==='localAircraft'?'regional receiver':key==='vessels'?(localAis?'regional AIS-catcher receiver':'AISStream coverage only'):'provider coverage only',
     }]))};
   }

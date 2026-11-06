@@ -27,3 +27,5 @@ test('back-forward cache restoration keeps controls and refresh polling usable',
 test('zero-result explicit queries cannot train a suggested layer',async()=>{
   const f=fixture();await f.context.health();f.el('kind').value='vessel';f.el('query').value='missing ship';await f.context.search();assert.deepEqual(f.data().cells,[]);
 });
+
+test('source age and stale reason remain visible after a successful HTTP health check',async()=>{const f=fixture();await new Promise(resolve=>setImmediate(resolve));f.api.status=async()=>({generatedAt:Date.now(),feeds:{aircraft:{source:'OpenSky',status:'stale',count:0,lastSuccessAt:Date.now(),snapshotAt:Date.now()-3600000,sourceProblem:'Upstream aircraft snapshot stale'}}});await f.context.health();const text=node=>typeof node==='string'?node:[node.textContent||'',...(node.children||[]).map(text)].join(' ');const shown=text(f.el('feeds'));assert.match(shown,/Source snapshot/);assert.match(shown,/Upstream aircraft snapshot stale/);assert.match(shown,/request/);});
