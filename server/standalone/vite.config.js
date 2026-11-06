@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import { resolveAllowedHosts } from '../../build/allowedHosts.js';
 import { createBrowserViteConfig } from '../../build/vite.js';
+import { networkTrackerPlugin } from '../network/plugin.js';
 import { localProviderPlugins } from '../providers/local.js';
 import { localMcpPlugin } from '../mcp/plugin.js';
 import { apiNotFoundPlugin } from './api-not-found.js';
@@ -23,6 +24,7 @@ export function standaloneConfig(
   const tools = standaloneVoiceTools();
   return createBrowserViteConfig({
     plugins: [
+      networkTrackerPlugin(),
       ...localProviderPlugins({
         realtime: { tools },
         gemini: { tools },

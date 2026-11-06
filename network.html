@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Home · Global Tracker</title><link rel="stylesheet" href="/network-console.css"></head>
+<body>
+<iframe id="globe" title="God’s Eye View 3D globe" allow="fullscreen" referrerpolicy="same-origin"></iframe>
+<header class="mast"><a class="wordmark" href="/network.html"><span class="orbit">◉</span><span>HOME <b>WORLD</b><small>GLOBAL TRACKING CONSOLE</small></span></a><div class="mast-actions"><span id="clock">--:-- UTC</span><button id="toggle-panel" aria-expanded="true" aria-controls="panel">Sources & search</button><a href="/tar1090/" target="_blank" rel="noopener">Air traffic ↗</a></div></header>
+<aside id="panel" aria-label="Tracking controls">
+ <div class="kicker">AIR / SEA / ORBIT</div><h1>Your world,<br>in motion.</h1>
+ <p class="intro">Find aircraft, vessels and satellites in the connected feeds.</p>
+ <form id="search-form"><label for="query">Name, callsign, ICAO, MMSI or NORAD ID</label><div class="search"><input id="query" type="search" placeholder="Try ISS or a flight callsign" maxlength="160" autocomplete="off"><button aria-label="Search">↗</button></div><label for="kind" class="sr-only">Track type</label><select id="kind"><option value="all">All domains</option><option value="aircraft">Aircraft</option><option value="vessel">Vessels</option><option value="satellite">Satellites</option></select></form>
+ <div id="search-status" role="status" aria-live="polite">Connecting to your tracking layer…</div><div id="results"></div>
+ <section class="pins"><h2>Watchlist <span>ON THIS DEVICE</span></h2><div id="pins"></div></section>
+ <section class="feeds"><h2>Source health <span id="updated">CHECKING</span></h2><div id="feeds"></div></section>
+ <p class="coverage">Coverage follows each provider’s network. Aircraft and ships are reported observations; orbital positions are calculated predictions. This is a map of available data.</p>
+ <footer><a href="https://github.com/davidferra13/gods-eye-view" target="_blank" rel="noopener">Source & credits ↗</a><a href="/api/world-tracker/v1/status" target="_blank" rel="noopener">Data API ↗</a></footer>
+</aside>
+<div id="selection" hidden role="status"></div>
+<script type="module" src="/network-console.js"></script>
+</body></html>
