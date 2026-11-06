@@ -4,6 +4,7 @@ import { mountLocalPreferences } from './network-preference-controls.js';
 import { mountPlanetaryEvents } from './network-planetary.js';
 const api=createWorldTrackerClient(),$=id=>document.getElementById(id),frame=$('globe');
 const layers=['flights','vessels','satellites','earthquakes'];
+$('native-weather').href=viewUrl(location.origin+'/',createView({camera:{lat:25,lon:-35,altitude_m:18000000},layers:[...layers,'wind'],map:'esri-imagery',style:'normal'}));
 frame.src=viewUrl(location.origin+'/?embed=1',createView({camera:{lat:25,lon:-35,altitude_m:18000000},layers,map:'esri-imagery',style:'normal'}));
 let queryAbort,healthBusy=false,searchBusy=false,debounce,selected=null,disposed=false,pins=[];
 let preferenceStorage;try{preferenceStorage=localStorage;}catch{}

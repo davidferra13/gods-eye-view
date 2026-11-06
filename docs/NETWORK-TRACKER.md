@@ -27,3 +27,7 @@ The network console reads the native earthquake layer's existing in-memory USGS 
 Local M4+ criteria are unavailable without verified property coordinates. FIRMS focus is unavailable while the existing server reports no key; no key or paid API is provisioned. These source/controller tests do not prove a rendered physical client, real-event delivery, uninterrupted operation, eye tracking or global complete coverage.
 
 On Windows the existing native task launcher uses Vite’s supported native configuration loader, avoiding a separate esbuild configuration-bundle process during startup. Configuration dependencies therefore require restarting the same task after changes; application hot reload remains available. No new supervisor or task is created.
+
+## Native forecast viewport
+
+The console provides an explicit same-origin link to the existing full GEV viewport with its native wind layer and forecast controls. It replaces this page only when selected; browser Back returns to the console. No secondary globe app, renderer, collector or timer is added. GFS model wind is 10 m above ground on the served 1° grid; native temperature is 2 m above ground and pressure is mean sea level. Issued/valid times, model choice and unavailable/stale states remain owned by the native controls. Public KLWM observations are independently checked station measurements, not a property sensor or measured volumetric field. No local coordinates are inferred and no private-property focus is enabled.
