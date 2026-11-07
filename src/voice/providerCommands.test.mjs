@@ -124,6 +124,7 @@ function compositionFixture(
     supportedProviders = ['openai', 'gemini'],
     factoryProviders = ['openai', 'gemini'],
     savedProvider = null,
+    preferredProvider,
     storageDenied = false,
     gateStarts = () => false,
     onSessionEvent = () => {},
@@ -348,6 +349,7 @@ function compositionFixture(
       dataManager,
       signal: lifetime.signal,
       supportedProviders,
+      preferredProvider,
       createControl,
       createCard() {
         const card = passiveView();
@@ -856,3 +858,37 @@ for (const action of ['stop', 'destroy']) {
     });
   }
 }
+
+test('host-configured Gemini is used for a new client without starting a session', (t) => {
+  const fixture = compositionFixture(t, { preferredProvider: 'gemini' });
+  assert.equal(fixture.facade.provider, 'gemini');
+  assert.equal(fixture.instances[0].provider, 'gemini');
+  assert.deepEqual(fixture.instances[0].starts, []);
+  assert.deepEqual(fixture.storageWrites, []);
+});
+
+test('an explicit saved provider wins over the host default', (t) => {
+  const fixture = compositionFixture(t, {
+    preferredProvider: 'gemini',
+    savedProvider: 'openai',
+  });
+  assert.equal(fixture.facade.provider, 'openai');
+  assert.deepEqual(fixture.instances[0].starts, []);
+});
+
+test('host default works with denied storage and cannot add an unsupported provider', () => {
+  const denied = {
+    getItem() {
+      throw new Error('Storage denied');
+    },
+  };
+  assert.equal(
+    readVoiceProvider(denied, ['openai', 'gemini'], 'gemini'),
+    'gemini',
+  );
+  assert.equal(readVoiceProvider(denied, ['openai'], 'gemini'), 'openai');
+  assert.equal(
+    readVoiceProvider(denied, ['openai', 'gemini'], 'invalid'),
+    'openai',
+  );
+});

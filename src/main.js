@@ -8,6 +8,7 @@ const photonSetting = import.meta.env.PHOTON_URL;
 const application = createStandaloneApplication({
   googleApiKey: import.meta.env.GOOGLE_MAPS_API_KEY,
   cesiumToken: import.meta.env.CESIUM_ION_TOKEN,
+  voice: { preferredProvider: import.meta.env.VITE_GEV_AI_PROVIDER },
   geospatial:
     photonSetting === undefined ? {} : { endpoints: { photon: photonSetting } },
   allowQaRegistration: import.meta.env.DEV,
