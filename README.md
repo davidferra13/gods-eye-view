@@ -729,3 +729,7 @@ One heads-up from the inside: build in this space for a week and you learn that 
 **🌐 God's Eye View. No place left behind.**
 
 </div>
+
+### Private Gemini HTTPS
+
+An owner may configure `GEV_GEMINI_TRUSTED_PROXY_ORIGIN` with the exact private Tailscale Serve HTTPS origin and `GEV_GEMINI_TRUSTED_PROXY_LOGIN` with their Tailscale login. Both are required. This opt-in admits only Gemini voice/chat requests relayed from loopback with that exact authority, authenticated login, HTTPS scheme and one tailnet source address. Foreign origins, other users, LAN header impersonation and public proxies remain refused. Provider Settings keeps its separate local-only gate. Leave both blank unless that private owner route exists.

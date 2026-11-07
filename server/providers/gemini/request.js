@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { readRequestBody } from '../common/request.js';
 import { admitSameSiteRequest } from '../../../src/localRequestGate.mjs';
 import {
@@ -5,11 +6,73 @@ import {
   resolveAllowedHosts,
 } from '../../../build/allowedHosts.js';
 
+/** Explicit owner-only Tailscale Serve opt-in; never trust headers from LAN peers. */
+function trustedOwnerProxy(req, configured = {}) {
+  const headers = req.headers || {};
+  const peer = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  if (!['127.0.0.1', '::1'].includes(peer)) return false;
+  let expected;
+  try {
+    expected = new URL(String(configured.origin || ''));
+  } catch {
+    return false;
+  }
+  if (
+    expected.protocol !== 'https:' ||
+    expected.username ||
+    expected.password ||
+    expected.pathname !== '/' ||
+    expected.search ||
+    expected.hash ||
+    !/^[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net$/.test(expected.hostname)
+  )
+    return false;
+  const login = String(configured.login || '')
+    .trim()
+    .toLowerCase();
+  if (
+    !login ||
+    !login.includes('@') ||
+    String(headers['tailscale-user-login'] || '')
+      .trim()
+      .toLowerCase() !== login ||
+    headers.host !== expected.host ||
+    headers.origin !== expected.origin ||
+    headers['x-forwarded-proto'] !== 'https'
+  )
+    return false;
+  // No public CDN, nested proxy, or caller-supplied forwarding chain is admitted.
+  if (
+    ['forwarded', 'via', 'x-real-ip', 'cf-ray', 'cf-connecting-ip'].some(
+      (name) => String(headers[name] || '').trim(),
+    )
+  )
+    return false;
+  if (
+    headers['x-forwarded-host'] &&
+    headers['x-forwarded-host'] !== expected.host
+  )
+    return false;
+  if (
+    headers['x-forwarded-port'] &&
+    headers['x-forwarded-port'] !== (expected.port || '443')
+  )
+    return false;
+  const address = String(headers['x-forwarded-for'] || '').trim();
+  const version = isIP(address);
+  if (version === 4) {
+    const parts = address.split('.').map(Number);
+    return parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+  }
+  return version === 6 && address.toLowerCase().startsWith('fd7a:115c:a1e0:');
+}
+
 /** Use the app's Host and request policies, with a required browser Origin. */
 export function isGeminiRequestOriginAllowed(
   req,
   configuredHost = '',
   configuredAllowedHosts,
+  trustedProxy = {},
 ) {
   const host = req.headers?.host;
   const origin = req.headers?.origin;
@@ -21,14 +84,15 @@ export function isGeminiRequestOriginAllowed(
     /[\s/?#@\\]/.test(host)
   )
     return false;
-  const protocol = req.socket?.encrypted ? 'https:' : 'http:';
+  const relay = trustedOwnerProxy(req, trustedProxy);
+  const protocol = relay || req.socket?.encrypted ? 'https:' : 'http:';
   if (
     !admitSameSiteRequest({
       hostHeader: host,
       protocol,
       origin,
       secFetchSite: req.headers?.['sec-fetch-site'],
-      proxyHeaders: req.headers || {},
+      proxyHeaders: relay ? {} : req.headers || {},
     }).ok
   )
     return false;

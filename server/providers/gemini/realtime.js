@@ -28,6 +28,10 @@ export function createGeminiTokenHandler({
     process.env.GEMINI_LIVE_MODEL || GEMINI_LIVE_MODEL_DEFAULT,
   resolveHost = () => process.env.HOST,
   resolveAllowedHosts = () => process.env.GEV_ALLOWED_HOSTS,
+  resolveTrustedProxy = () => ({
+    origin: process.env.GEV_GEMINI_TRUSTED_PROXY_ORIGIN,
+    login: process.env.GEV_GEMINI_TRUSTED_PROXY_LOGIN,
+  }),
   resolveRateLimit = () => process.env.GEV_RATELIMIT_GEMINI_PER_MIN ?? '30',
   now = Date.now,
   timeoutMs = 15_000,
@@ -58,7 +62,12 @@ export function createGeminiTokenHandler({
     let model;
     try {
       if (
-        !isGeminiRequestOriginAllowed(req, resolveHost(), resolveAllowedHosts())
+        !isGeminiRequestOriginAllowed(
+          req,
+          resolveHost(),
+          resolveAllowedHosts(),
+          resolveTrustedProxy(),
+        )
       )
         return reply(403, 'Gemini voice requires a same-origin app request');
       apiKey = String(resolveApiKey() || '').trim();
