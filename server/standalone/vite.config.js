@@ -22,7 +22,7 @@ export function standaloneConfig(
     if (process.env[key] === undefined) process.env[key] = value;
   }
   const tools = standaloneVoiceTools();
-  return createBrowserViteConfig({
+  const config = createBrowserViteConfig({
     plugins: [
       networkTrackerPlugin(),
       ...localProviderPlugins({
@@ -44,6 +44,13 @@ export function standaloneConfig(
     allowedHosts: resolveAllowedHosts(process.env.GEV_ALLOWED_HOSTS),
     command,
   });
+  if (command === 'build') {
+    config.build.rollupOptions = {
+      ...config.build.rollupOptions,
+      input: { globe: root + 'index.html', network: root + 'network.html' },
+    };
+  }
+  return config;
 }
 
 export default defineConfig(standaloneConfig);

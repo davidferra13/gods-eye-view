@@ -144,8 +144,9 @@ test('root config retains existing named exports and standalone provider order',
   for (const [name, value] of Object.entries(providers))
     assert.equal(compatibility[name], value, name);
   const config = standaloneConfig({ mode: 'test' }, { nominatimStorageDir });
+  assert.equal(config.plugins[4].name, 'home-network-tracker');
   const standaloneProviders = config.plugins
-    .slice(4, -6)
+    .slice(5, -6)
     .map((plugin) => plugin.name);
   assert.equal(
     standaloneProviders.filter((name) => name === 'gemini-live-proxy').length,
@@ -457,4 +458,27 @@ test('every API response carries the API policy and nosniff on real dev and prev
       await server.close();
     }
   }
+});
+
+test('standalone production build emits both globe and network tracker documents', async (t) => {
+  const root = await makeFixtureRoot('gev-tracker-output-');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, 'index.html'), '<!doctype html><title>Globe fixture</title><script type="module" src="/globe.js"></script>');
+  await writeFile(path.join(root, 'network.html'), '<!doctype html><title>Tracker fixture</title><script type="module" src="/network.js"></script>');
+  await writeFile(path.join(root, 'globe.js'), 'document.body.dataset.fixture = "globe";');
+  await writeFile(path.join(root, 'network.js'), 'document.body.dataset.fixture = "network";');
+  const config = standaloneConfig({ command: 'build', mode: 'test' }, { nominatimStorageDir });
+  const configured = config.build.rollupOptions?.input ?? { globe: 'index.html' };
+  const input = Object.fromEntries(Object.entries(configured).map(([name, file]) => [name, path.join(root, path.basename(file))]));
+  await build({
+    root, configFile: false, envFile: false, publicDir: false, logLevel: 'silent',
+    build: { outDir: path.join(root, 'dist'), rollupOptions: { input } },
+  });
+  for (const name of ['index.html', 'network.html']) {
+    const output = readFileSync(path.join(root, 'dist', name), 'utf8');
+    assert.match(output, /type="module".*assets\//, name + ' must reference compiled script');
+  }
+  assert.equal(config.server.headers['X-Frame-Options'], 'DENY');
+  assert.ok(config.server.headers['Content-Security-Policy'].includes("frame-ancestors 'none'"));
+  assert.equal(standaloneConfig({ command: 'serve', mode: 'test' }, { nominatimStorageDir }).build.rollupOptions?.input, undefined);
 });
